@@ -32,6 +32,7 @@ import android.content.ServiceConnection;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.util.Log;
 import com.android.vending.billing.IInAppBillingService;
 
@@ -50,7 +51,13 @@ import static org.solovyev.android.checkout.ResponseCodes.ITEM_NOT_OWNED;
 
 public final class Billing {
 
+	static final long SECOND = 1000L;
+	static final long MINUTE = SECOND * 60L;
+	static final long HOUR = MINUTE * 60L;
+	static final long DAY = HOUR * 24L;
+
 	private static final int API_VERSION = 3;
+	private static final long MAX_CONNECTING_TIME = 5 * SECOND;
 
 	@Nonnull
 	private static final String TAG = "Checkout";
@@ -59,11 +66,6 @@ public final class Billing {
 
 	@Nonnull
 	private static final EmptyListener EMPTY_LISTENER = new EmptyListener();
-
-	static final long SECOND = 1000L;
-	static final long MINUTE = SECOND * 60L;
-	static final long HOUR = MINUTE * 60L;
-	static final long DAY = HOUR * 24L;
 
 	@Nonnull
 	private final Context context;
@@ -75,6 +77,9 @@ public final class Billing {
 	@GuardedBy("lock")
 	@Nonnull
 	private volatile State state = State.INITIAL;
+
+	@GuardedBy("lock")
+	private volatile long connectingTime = 0;
 
 	@Nonnull
 	private final Object lock = new Object();
@@ -212,6 +217,11 @@ public final class Billing {
 			if (state != newState) {
 				state = newState;
 				switch (state) {
+					case CONNECTING:
+						// todo serso: we must to setup a timer to trigger reconnection if necessary (currently
+						// Billing tries to reconnect only if new billing request is added)
+						connectingTime = SystemClock.uptimeMillis();
+						break;
 					case CONNECTED:
 						executePendingRequests();
 						break;
@@ -246,7 +256,13 @@ public final class Billing {
 				return;
 			}
 			if (state == State.CONNECTING) {
-				return;
+				final long connectionElapsed = SystemClock.uptimeMillis() - connectingTime;
+				if (connectionElapsed > MAX_CONNECTING_TIME) {
+					warning("Connection to Billing API can't be established for " + connectionElapsed + "ms. Trying to" +
+							"connect again.");
+				} else {
+					return;
+				}
 			}
 			setState(State.CONNECTING);
 			mainThread.execute(new Runnable() {
