@@ -38,6 +38,10 @@ class SameThreadExecutor implements CancellableExecutor {
 	}
 
 	@Override
+	public void execute(@Nonnull Runnable command, long delayMillis) {
+	}
+
+	@Override
 	public void cancel(@Nonnull Runnable runnable) {
 	}
 }

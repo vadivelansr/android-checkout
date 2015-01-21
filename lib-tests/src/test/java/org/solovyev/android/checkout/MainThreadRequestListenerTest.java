@@ -90,6 +90,11 @@ public class MainThreadRequestListenerTest {
 		}
 
 		@Override
+		public void execute(@Nonnull Runnable runnable, long delayMillis) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
 		public void cancel(@Nonnull Runnable runnable) {
 			assertNotNull(executing);
 			assertSame(executing, runnable);

@@ -29,5 +29,8 @@ interface CancellableExecutor extends Executor {
 
 	@Override
 	void execute(@Nonnull Runnable runnable);
+
+	void execute(@Nonnull Runnable runnable, long delayMillis);
+
 	void cancel(@Nonnull Runnable runnable);
 }

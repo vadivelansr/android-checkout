@@ -61,6 +61,11 @@ final class MainThread implements CancellableExecutor {
 	}
 
 	@Override
+	public void execute(@Nonnull Runnable runnable, long delayMillis) {
+		mainHandler.postDelayed(runnable, delayMillis);
+	}
+
+	@Override
 	public void cancel(@Nonnull Runnable runnable) {
 		this.mainHandler.removeCallbacks(runnable);
 	}

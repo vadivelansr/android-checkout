@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.lang.System.currentTimeMillis;
 import static org.solovyev.android.checkout.ResponseCodes.ITEM_ALREADY_OWNED;
@@ -57,7 +58,8 @@ public final class Billing {
 	static final long DAY = HOUR * 24L;
 
 	private static final int API_VERSION = 3;
-	private static final long MAX_CONNECTING_TIME = 5 * SECOND;
+	private static final long MAX_CONNECTING_TIME = 3 * SECOND;
+	private static final long MAX_CONNECTING_ATTEMPTS = 3;
 
 	@Nonnull
 	private static final String TAG = "Checkout";
@@ -112,6 +114,17 @@ public final class Billing {
 
 	@Nonnull
 	private PurchaseVerifier purchaseVerifier;
+
+	@Nonnull
+	private final ReconnectionRunnable reconnectionRunnable = new ReconnectionRunnable();
+
+	@Nonnull
+	private final Runnable connectionRunnable = new Runnable() {
+		@Override
+		public void run() {
+			connectOnMainThread();
+		}
+	};
 
 	/**
 	 * Same as {@link #Billing(android.content.Context, android.os.Handler, Configuration)} with new handler
@@ -212,15 +225,25 @@ public final class Billing {
 		this.purchaseVerifier = purchaseVerifier;
 	}
 
-	void setState(@Nonnull State newState) {
+	boolean setState(@Nonnull State newState) {
+		return setState(newState, false);
+	}
+
+	boolean setState(@Nonnull State newState, boolean force) {
 		synchronized (lock) {
-			if (state != newState) {
+			if (state != newState || force) {
 				state = newState;
 				switch (state) {
 					case CONNECTING:
-						// todo serso: we must to setup a timer to trigger reconnection if necessary (currently
-						// Billing tries to reconnect only if new billing request is added)
 						connectingTime = SystemClock.uptimeMillis();
+						final int attempt = reconnectionRunnable.maybeCount(force);
+						if (attempt >= MAX_CONNECTING_ATTEMPTS) {
+							reconnectionRunnable.resetCounter();
+							setState(State.FAILED);
+							return false;
+						}
+						mainThread.cancel(reconnectionRunnable);
+						mainThread.execute(reconnectionRunnable, MAX_CONNECTING_TIME);
 						break;
 					case CONNECTED:
 						executePendingRequests();
@@ -236,6 +259,8 @@ public final class Billing {
 				}
 			}
 		}
+
+		return true;
 	}
 
 	private void executePendingRequests() {
@@ -250,27 +275,29 @@ public final class Billing {
 	}
 
 	public void connect() {
+		connect(false);
+	}
+
+	public void connect(boolean reconnect) {
 		synchronized (lock) {
 			if (state == State.CONNECTED) {
 				executePendingRequests();
 				return;
 			}
+			boolean force = false;
 			if (state == State.CONNECTING) {
-				final long connectionElapsed = SystemClock.uptimeMillis() - connectingTime;
-				if (connectionElapsed > MAX_CONNECTING_TIME) {
+				if (reconnect) {
+					final long connectionElapsed = SystemClock.uptimeMillis() - connectingTime;
 					warning("Connection to Billing API can't be established for " + connectionElapsed + "ms. Trying to" +
 							"connect again.");
+					force = true;
 				} else {
 					return;
 				}
 			}
-			setState(State.CONNECTING);
-			mainThread.execute(new Runnable() {
-				@Override
-				public void run() {
-					connectOnMainThread();
-				}
-			});
+			if (setState(State.CONNECTING, force)) {
+				mainThread.execute(connectionRunnable);
+			}
 		}
 	}
 
@@ -1047,4 +1074,31 @@ public final class Billing {
 		}
 	}
 
+	private class ReconnectionRunnable implements Runnable {
+
+		@Nonnull
+		private final AtomicInteger counter = new AtomicInteger(0);
+
+		@Override
+		public void run() {
+			if (state != State.CONNECTING) {
+				resetCounter();
+				return;
+			}
+			connect(true);
+		}
+
+		private int maybeCount(boolean count) {
+			if (count) {
+				return counter.incrementAndGet();
+			}
+
+			return resetCounter();
+		}
+
+		public int resetCounter() {
+			counter.set(0);
+			return 0;
+		}
+	}
 }
