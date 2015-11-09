@@ -20,6 +20,7 @@
  * Site:  http://se.solovyev.org
  */
 
+apply plugin: 'android-sdk-manager'
 apply plugin: 'com.android.library'
 apply plugin: 'maven'
 apply plugin: 'signing'
