@@ -22,8 +22,8 @@
 
 apply plugin: 'android-sdk-manager'
 apply plugin: 'com.android.library'
-apply plugin: 'maven'
-apply plugin: 'signing'
+apply plugin: 'com.github.dcendents.android-maven'
+apply plugin: 'com.jfrog.artifactory'
 
 android {
     compileSdkVersion android_sdk_version()
@@ -42,93 +42,14 @@ dependencies {
     compile 'com.google.code.findbugs:jsr305:2.0.3'
 }
 
-task androidJavadocs(type: Javadoc) {
-    source = android.sourceSets.main.java.srcDirs
-    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
-    configurations.compile.each { File file -> classpath += project.files(file.path) }
-}
-
-task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
-    classifier = 'javadoc'
-    from androidJavadocs.destinationDir
-}
-
 task androidSourcesJar(type: Jar) {
     classifier = 'sources'
     from android.sourceSets.main.java.srcDirs
 }
 
-task apklib(type: Zip) {
-    appendix = extension = 'apklib'
-
-    from 'src/main/AndroidManifest.xml'
-    into('res') {
-        from android.sourceSets.main.res.srcDirs
-    }
-    into('src') {
-        from android.sourceSets.main.java.srcDirs
-    }
-    into('src') {
-        from android.sourceSets.main.aidl.srcDirs
-    }
-}
-
-
 artifacts {
     archives androidSourcesJar
-    archives androidJavadocsJar
-    archives apklib
-}
-
-signing {
-    sign configurations.archives
 }
 
 group = "org.solovyev.android"
 version = version_name()
-
-uploadArchives {
-    repositories {
-        mavenDeployer {
-            beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
-
-            repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
-                authentication(userName: ossrhUsername, password: ossrhPassword)
-            }
-
-            snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
-                authentication(userName: ossrhUsername, password: ossrhPassword)
-            }
-
-            pom.project {
-                artifactId = 'checkout'
-                name 'Android Checkout Library'
-                packaging 'aar'
-                description 'Library for Android In-App Billing (Version 3)'
-                url 'https://github.com/serso/android-checkout'
-
-                scm {
-                    url 'https://github.com/serso/android-checkout'
-                    connection 'scm:https://serso@github.com/serso/android-checkout.git'
-                    developerConnection 'scm:git://github.com/serso/android-checkout.git'
-                }
-
-                licenses {
-                    license {
-                        name 'The Apache Software License, Version 2.0'
-                        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-                        distribution 'repo'
-                    }
-                }
-
-                developers {
-                    developer {
-                        id 'se.solovyev'
-                        name 'Sergey Solovyev'
-                        email 'se.solovyev@gmail.com'
-                    }
-                }
-            }
-        }
-    }
-}
